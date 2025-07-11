@@ -1,0 +1,4 @@
+ar: time: 523/2, free_heap: 168224, num: 0, rssi: -43, gain: 0/0, wander: 0.000000, jitter: 0.003620, window: 20, begin: 23, end: 43, freq: 38Hz
+W (6040577) app_main: g_csi_info_queue full
+RADAR_DADA,9640,6040612,0.000000,0.000000,0.000000,0,0.003620,0.006468,0.032339,1
+W (6040614) app_main: g_csi_info_queue full

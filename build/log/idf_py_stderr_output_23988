@@ -1,0 +1,70 @@
+info: INFO: Symbol IDF_TARGET_LINUX defined in multiple locations (see below). Please check if this is a correct behavior or a random name match:
+    D:\ESP_IDF\5.3\v5.3\esp-idf\Kconfig:78
+    D:\ESP_IDF\5.3\v5.3\esp-idf\Kconfig:162
+CMake Warning at D:/ESP_IDF/5.3/v5.3/esp-idf/components/partition_table/project_include.cmake:23 (message):
+  Partition table CSV file
+  D:/esp-csi-master/esp-csi-master/examples/esp-radar/console_test/partitions.csv
+  not found.  Change custom partition CSV path in menuconfig.
+Call Stack (most recent call first):
+  D:/ESP_IDF/5.3/v5.3/esp-idf/tools/cmake/build.cmake:400 (include)
+  D:/ESP_IDF/5.3/v5.3/esp-idf/tools/cmake/build.cmake:632 (__build_process_project_includes)
+  D:/ESP_IDF/5.3/v5.3/esp-idf/tools/cmake/project.cmake:710 (idf_build_process)
+  CMakeLists.txt:10 (project)
+
+
+Traceback (most recent call last):
+  File "D:\ESP_IDF\5.3\v5.3\esp-idf\components\partition_table\parttool.py", line 363, in <module>
+    main()
+  File "D:\ESP_IDF\5.3\v5.3\esp-idf\components\partition_table\parttool.py", line 332, in main
+    target = ParttoolTarget(**target_args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\ESP_IDF\5.3\v5.3\esp-idf\components\partition_table\parttool.py", line 88, in __init__
+    with open(partition_table_file, 'rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'D:/esp-csi-master/esp-csi-master/examples/esp-radar/console_test/partitions.csv'
+Traceback (most recent call last):
+  File "D:\ESP_IDF\5.3\v5.3\esp-idf\components\partition_table\parttool.py", line 363, in <module>
+    main()
+  File "D:\ESP_IDF\5.3\v5.3\esp-idf\components\partition_table\parttool.py", line 332, in main
+    target = ParttoolTarget(**target_args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\ESP_IDF\5.3\v5.3\esp-idf\components\partition_table\parttool.py", line 88, in __init__
+    with open(partition_table_file, 'rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'D:/esp-csi-master/esp-csi-master/examples/esp-radar/console_test/partitions.csv'
+Traceback (most recent call last):
+  File "D:\ESP_IDF\5.3\v5.3\esp-idf\components\partition_table\parttool.py", line 363, in <module>
+    main()
+  File "D:\ESP_IDF\5.3\v5.3\esp-idf\components\partition_table\parttool.py", line 332, in main
+    target = ParttoolTarget(**target_args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\ESP_IDF\5.3\v5.3\esp-idf\components\partition_table\parttool.py", line 88, in __init__
+    with open(partition_table_file, 'rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'D:/esp-csi-master/esp-csi-master/examples/esp-radar/console_test/partitions.csv'
+Traceback (most recent call last):
+  File "D:\ESP_IDF\5.3\v5.3\esp-idf\components\partition_table\parttool.py", line 363, in <module>
+    main()
+  File "D:\ESP_IDF\5.3\v5.3\esp-idf\components\partition_table\parttool.py", line 332, in main
+    target = ParttoolTarget(**target_args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\ESP_IDF\5.3\v5.3\esp-idf\components\partition_table\parttool.py", line 88, in __init__
+    with open(partition_table_file, 'rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'D:/esp-csi-master/esp-csi-master/examples/esp-radar/console_test/partitions.csv'
+Traceback (most recent call last):
+  File "D:\ESP_IDF\5.3\v5.3\esp-idf\components\partition_table\parttool.py", line 363, in <module>
+    main()
+  File "D:\ESP_IDF\5.3\v5.3\esp-idf\components\partition_table\parttool.py", line 332, in main
+    target = ParttoolTarget(**target_args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\ESP_IDF\5.3\v5.3\esp-idf\components\partition_table\parttool.py", line 88, in __init__
+    with open(partition_table_file, 'rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'D:/esp-csi-master/esp-csi-master/examples/esp-radar/console_test/partitions.csv'
+Project commit: HEAD-HASH-NOTFOUND
+info: INFO: Symbol IDF_TARGET_LINUX defined in multiple locations (see below). Please check if this is a correct behavior or a random name match:
+    D:\ESP_IDF\5.3\v5.3\esp-idf\Kconfig:78
+    D:\ESP_IDF\5.3\v5.3\esp-idf\Kconfig:162
+Server running, waiting for requests on stdin...
+Loading config from d:\esp-csi-master\esp-csi-master\examples\esp-radar\console_test\sdkconfig...

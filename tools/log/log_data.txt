@@ -1,0 +1,14 @@
+radar --csi_output_type LLFT --csi_output_format base64
+csi> 
+csi> 
+radar --csi_en 1
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: unexpected argument "1"
+Command returned non-zero error code: 0xffffffff (ESP_FAIL)
+csi> 
+csi> 
