@@ -229,7 +229,7 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
             self.multi_device_mode = False
         
         self.active_device_id = 'esp32_1'  # 默认活跃设备
-        self.server_url = "http://localhost:7799/api/predict"
+        self.server_url = "http://8.136.10.160:12786/api/csi_data"
         self.enable_server_predict = False
         self.wifi_connected = {}  # 每个设备的WiFi连接状态
         for device_id in self.serial_queues_read.keys():
@@ -1393,8 +1393,10 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         server_url_layout = QHBoxLayout()
         server_label = QLabel("服务器地址:")
         self.lineEdit_server_url = QLineEdit()
-        self.lineEdit_server_url.setText(self.server_url)
-        self.lineEdit_server_url.setPlaceholderText("输入预测服务器地址")
+        # 使用csi_data接口作为默认服务器地址，方便数据采集
+        data_url = "http://8.136.10.160:12786/api/csi_data"
+        self.lineEdit_server_url.setText(data_url)
+        self.lineEdit_server_url.setPlaceholderText("输入数据服务器地址")
         server_url_layout.addWidget(server_label)
         server_url_layout.addWidget(self.lineEdit_server_url)
         
@@ -1482,6 +1484,17 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         user_id_layout.addWidget(user_id_label)
         user_id_layout.addWidget(self.user_id_input)
         
+        # 在任务ID输入上方添加动作类型选择
+        action_type_layout = QHBoxLayout()
+        action_type_label = QLabel("动作类型:")
+        self.action_type_combo = QComboBox()
+        self.action_type_combo.addItems([
+            "walk", "sit", "stand", "lie_down", "bend", "fall_from_stand", "fall_from_squat", "fall_from_bed"
+        ])
+        action_type_layout.addWidget(action_type_label)
+        action_type_layout.addWidget(self.action_type_combo)
+        task_layout.addLayout(action_type_layout)
+        
         # 添加到任务布局
         task_layout.addLayout(task_id_layout)
         task_layout.addLayout(user_id_layout)
@@ -1527,6 +1540,15 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         self.start_task_button.setEnabled(False)
         self.end_task_button.setEnabled(True)
         
+        # 按钮视觉反馈
+        self.start_task_button.setText("采集中...")
+        self.start_task_button.setStyleSheet("background-color: lime; color: black;")
+        self.end_task_button.setText("结束采集")
+        self.end_task_button.setStyleSheet("background-color: red; color: white;")
+        
+        # 日志反馈
+        self.textBrowser_log.append(f"<font color='lime'>【提示】已开始采集任务: {task_id}</font>")
+        
         # 开始任务
         self.start_task_collection(task_id)
         
@@ -1535,6 +1557,15 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         # 启用开始按钮，禁用结束按钮
         self.start_task_button.setEnabled(True)
         self.end_task_button.setEnabled(False)
+        
+        # 按钮视觉反馈
+        self.start_task_button.setText("开始采集")
+        self.start_task_button.setStyleSheet("background-color: green; color: white;")
+        self.end_task_button.setText("已结束")
+        self.end_task_button.setStyleSheet("background-color: gray; color: white;")
+        
+        # 日志反馈
+        self.textBrowser_log.append(f"<font color='orange'>【提示】已结束采集任务</font>")
         
         # 结束任务
         self.end_task_collection()
@@ -1589,15 +1620,21 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
             if not server_url.startswith(('http://', 'https://')):
                 server_url = 'http://' + server_url
                 
+            # 规范化URL，确保使用predict接口
+            base_url = server_url.rstrip('/').replace('/api/csi_data', '')
+            predict_url = base_url + '/api/predict'
+                
             # 更新服务器地址
-            self.server_url = server_url
+            self.lineEdit_server_url.setText(predict_url)
+            self.server_url = predict_url
             self.enable_server_predict = True
             
             # 测试服务器连接
             try:
-                response = requests.get(server_url.replace('/api/predict', '/api/test_connection'), timeout=5)
+                test_url = base_url + '/api/test_connection'
+                response = requests.get(test_url, timeout=5)
                 if response.status_code == 200:
-                    self.textBrowser_log.append(f"<font color='green'>预测服务器连接成功</font>")
+                    self.textBrowser_log.append(f"<font color='green'>预测服务器连接成功: {predict_url}</font>")
                 else:
                     self.textBrowser_log.append(
                         f"<font color='yellow'>警告: 服务器返回异常状态码: {response.status_code}</font>")
@@ -1605,6 +1642,12 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
                 self.textBrowser_log.append(f"<font color='yellow'>警告: 服务器连接测试失败: {str(e)}</font>")
                 
         else:
+            # 禁用预测功能时恢复csi_data接口
+            base_url = self.server_url.rstrip('/').replace('/api/predict', '')
+            data_url = base_url + '/api/csi_data'
+            self.lineEdit_server_url.setText(data_url)
+            self.server_url = data_url
+            
             self.enable_server_predict = False
             self.stop_detection()  # 停止检测
             self.textBrowser_log.append("<font color='yellow'>已禁用实时预测</font>")
@@ -1709,22 +1752,23 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
     def start_task_collection(self, task_id):
         """开始采集任务数据"""
         self.current_task_id = task_id
-        
         # 清空所有设备的任务缓冲区
         for device_id in self.device_task_buffers:
             self.device_task_buffers[device_id] = []
-            
-        # 向所有设备发送开始任务命令
+        # 获取当前选中的动作类型
+        taget_action = self.action_type_combo.currentText()
+        # 向所有设备发送开始任务命令和动作类型
         for device_id, queue in self.serial_queues_write.items():
             if hasattr(queue, 'put'):
                 # 设置用户名
                 user_command = f"set_user:{self.current_user_name}"
                 queue.put(user_command)
-                
+                # 设置动作类型
+                queue.put(f"set_taget:{taget_action}")
                 # 开始任务
                 command = f"start_task:{task_id}"
                 queue.put(command)
-                self.textBrowser_log.append(f"<font color='cyan'>设备 {device_id} 开始任务: {task_id}</font>")
+                self.textBrowser_log.append(f"<font color='cyan'>设备 {device_id} 开始任务: {task_id}，动作类型: {taget_action}</font>")
     
     def end_task_collection(self):
         """结束采集任务数据并合并"""
@@ -1751,21 +1795,32 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         """合并两个设备的数据"""
         if not self.current_task_id:
             return
-            
         # 从两个设备的处理线程获取数据
         device1_data = self.device_task_buffers.get('esp32_1', [])
         device2_data = self.device_task_buffers.get('esp32_2', [])
-        
         if not device1_data or not device2_data:
             self.textBrowser_log.append("<font color='yellow'>至少有一个设备的数据为空，无法合并</font>")
             return
-            
         # 合并数据
         merged_file = merge_task_data(device1_data, device2_data, self.current_task_id, self.current_user_name)
-        
         if merged_file:
             self.textBrowser_log.append(f"<font color='green'>已合并设备数据并保存到: {merged_file}</font>")
-        
+            # 新增：自动上传融合后的csv内容到服务器
+            try:
+                import csv
+                merged_data = []
+                with open(merged_file, 'r', newline='') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        merged_data.append(row)
+                # 上传到服务器（直接调用本地函数，不再import）
+                success = send_data_to_server(merged_data, self.server_url)
+                if success:
+                    self.textBrowser_log.append(f"<font color='green'>融合数据已上传服务器: {merged_file}</font>")
+                else:
+                    self.textBrowser_log.append(f"<font color='red'>融合数据上传服务器失败: {merged_file}</font>")
+            except Exception as e:
+                self.textBrowser_log.append(f"<font color='red'>融合数据上传异常: {e}</font>")
         # 清空任务ID和缓冲区
         self.current_task_id = None
         for device_id in self.device_task_buffers:
@@ -2030,16 +2085,7 @@ def parse_task_id(task_id):
 
 
 def save_and_send_task_data(task_data_buffer, task_id, user_name, server_url, enable_server_save, device_id=None):
-    """保存和发送任务数据，支持多设备区分
-    
-    Args:
-        task_data_buffer: 数据缓冲区
-        task_id: 任务ID
-        user_name: 用户名
-        server_url: 服务器URL
-        enable_server_save: 是否启用服务器保存
-        device_id: 设备ID，默认为None
-    """
+    """保存和发送任务数据，支持多设备区分"""
     if not task_data_buffer:
         print("task_data_buffer 为空，未保存或发送数据")
         return
@@ -2058,7 +2104,7 @@ def save_and_send_task_data(task_data_buffer, task_id, user_name, server_url, en
 
         print(f"保存数据到文件: {filepath}, 动作: {action}, 序号: {sequence}, 设备: {device_id or 'unknown'}")
 
-        # 保存到本地文件
+        # 保存到本地文件（始终保存）
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(task_data_buffer[0].keys())
@@ -2066,27 +2112,23 @@ def save_and_send_task_data(task_data_buffer, task_id, user_name, server_url, en
                 writer.writerow(row.values())
         print(f"本地保存文件: {filename}, 数据量: {len(task_data_buffer)} 条")
 
-        if enable_server_save:
-            print(f"准备发送批量数据: {len(task_data_buffer)} 条")
-            print(f"服务器地址: {server_url}")
-
-            # 为每条数据添加元数据
-            for data in task_data_buffer:
-                data['user_name'] = user_name
-                data['action'] = action
-                data['sequence'] = sequence
-                data['file_name'] = filename
-                # 添加设备ID区分数据来源
-                if device_id:
-                    data['device_id'] = device_id
-
-            success = send_data_to_server(task_data_buffer, server_url)
-            if success:
-                print(f"服务器数据发送成功: {filename}")
-            else:
-                print(f"警告: 服务器数据发送失败: {filename}")
+        # 无论enable_server_save是否为True，只要有数据都尝试上传
+        print(f"准备发送批量数据: {len(task_data_buffer)} 条")
+        print(f"服务器地址: {server_url}")
+        # 为每条数据添加元数据
+        for data in task_data_buffer:
+            data['user_name'] = user_name
+            data['action'] = action
+            data['sequence'] = sequence
+            data['file_name'] = filename
+            # 添加设备ID区分数据来源
+            if device_id:
+                data['device_id'] = device_id
+        success = send_data_to_server(task_data_buffer, server_url)
+        if success:
+            print(f"服务器数据发送成功: {filename}")
         else:
-            print("服务器保存功能未启用，跳过发送")
+            print(f"警告: 服务器数据发送失败: {filename}")
     except Exception as e:
         print(f"保存任务数据时发生错误: {type(e).__name__}: {str(e)}")
 
@@ -2292,6 +2334,8 @@ def serial_handle(queue_read, queue_write, port, device_id=None):
     csi_data_counter_name = f'csi_data_counter_{device_id}' if device_id else 'csi_data_counter'
     setattr(serial_handle, csi_data_counter_name, 0)
 
+    current_taget = "unknown"  # 新增：保存当前动作类型
+
     while True:
         try:
             if not queue_write.empty():
@@ -2325,6 +2369,10 @@ def serial_handle(queue_read, queue_write, port, device_id=None):
                     if new_url and new_url != "http":
                         server_url = new_url
                         print(f"设置服务器地址为: {server_url}")
+                    continue
+                if command.startswith("set_taget:"):
+                    current_taget = command.split(":", 1)[1]
+                    print(f"设置当前taget为: {current_taget}")
                     continue
                 if command.startswith("start_task:"):
                     current_task_id = command.split(":")[1]
@@ -2470,6 +2518,9 @@ def serial_handle(queue_read, queue_write, port, device_id=None):
                                     if device_id:
                                         data_series['device_id'] = device_id
 
+                                    # 先同步taget字段
+                                    data_series['taget'] = current_taget
+
                                     # 发送到队列
                                     if not queue_read.full():
                                         queue_read.put(data_series)
@@ -2490,12 +2541,11 @@ def serial_handle(queue_read, queue_write, port, device_id=None):
                                     setattr(serial_handle, csi_data_counter_name, static_counter + 1)
 
                                     # 处理任务数据
-                                    if data_series['taget'] != 'unknown' and current_task_id:
+                                    if current_task_id:
                                         # 添加设备ID到数据中
                                         data_dict = data_series.astype(str).to_dict()
                                         if device_id:
                                             data_dict['device_id'] = device_id
-                                        
                                         # 添加数据到缓冲区
                                         task_data_buffer.append(data_dict)
 

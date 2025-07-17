@@ -587,7 +587,7 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         self.serial_queue_write.put(command)
 
         # 发送任务结束命令
-        self.serial_queue_write.put("end_task:")
+        self.serial_queue_write.put("end_task")
 
         # 停止当前采集
         self.is_collecting = False
@@ -604,14 +604,21 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         self.progressBar.setValue(100)
 
         # 记录日志
-        self.textBrowser_log.append(f"<font color='yellow'>采集暂停</font>")
+        self.textBrowser_log.append(f"<font color='yellow'>采集已停止</font>")
 
     def on_delay_timeout(self):
         """延时结束，开始采集"""
         # 重置样式
         self.timeEdit_collect_delay.setStyleSheet("color: black")
-
-        # 开始第一次采集
+        self.timeEdit_collect_delay.setTime(self.label_delay)  # 恢复原始设置的延时值
+        
+        # 停止延迟计时器
+        if self.collection_delay_timer.isActive():
+            self.collection_delay_timer.stop()
+        if self.timer_collect_delay.isActive():
+            self.timer_collect_delay.stop()
+        
+        # 开始采集
         self.command_collect_target_start()
 
     def on_duration_timeout(self):
@@ -640,6 +647,7 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         self.timeEdit_collect_delay.setStyleSheet("color: black")
         self.pushButton_collect_start.setText("start")
 
+        # 停止所有计时器
         if hasattr(self, 'progress_timer') and self.progress_timer.isActive():
             self.progress_timer.stop()
         if self.timer_collect_delay.isActive():
@@ -648,6 +656,13 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
             self.collection_delay_timer.stop()
         if self.collection_duration_timer.isActive():
             self.collection_duration_timer.stop()
+        
+        # 中止任何正在进行的采集
+        command = "radar --collect_number 0 --collect_tagets unknown"
+        self.serial_queue_write.put(command)
+        
+        # 发送任务结束命令
+        self.serial_queue_write.put("end_task")
 
         user_name = self.lineEdit_user.text().strip()
         target = self.comboBox_collect_target.currentText()
@@ -664,10 +679,12 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         if second > 0:
             self.timeEdit_collect_delay.setTime(time_temp.addSecs(-1))
             self.timer_collect_delay.start()
-            if second <= 5:
-                self.textBrowser_log.append(f"<font color='cyan'>Starting in {second} seconds...</font>")
+            if second <= 5 or second % 5 == 0:  # 每5秒显示一次，最后5秒每秒显示
+                self.textBrowser_log.append(f"<font color='cyan'>将在 {second} 秒后开始采集...</font>")
         else:
             self.timer_collect_delay.stop()
+            self.timeEdit_collect_delay.setStyleSheet("color: black")  # 重置样式
+            self.textBrowser_log.append(f"<font color='green'>延时结束，开始采集...</font>")
             self.on_delay_timeout()
 
     def pushButton_collect_show(self):
@@ -695,7 +712,18 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
             self.pushButton_collect_start.setText("stop")
             self.pushButton_collect_start.setStyleSheet("color: red")
             self.timeEdit_collect_delay.setStyleSheet("color: red")
-            self.command_collect_target_start()
+            
+            # 获取延迟时间（秒）
+            delay_seconds = self.label_delay.hour() * 3600 + self.label_delay.minute() * 60 + self.label_delay.second()
+            
+            if delay_seconds > 0:
+                # 如果有延迟，启动延迟计时器并开始倒计时
+                self.collection_delay_timer.start(delay_seconds * 1000)  # 毫秒为单位
+                self.timer_collect_delay.start()
+                self.textBrowser_log.append(f"<font color='cyan'>将在 {delay_seconds} 秒后开始采集...</font>")
+            else:
+                # 如果没有延迟，直接开始采集
+                self.command_collect_target_start()
         else:
             self.finish_collection()
 
