@@ -1529,29 +1529,42 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         self.current_user_name = text
         
     def start_task(self):
-        """点击开始任务按钮的处理函数"""
+        """点击开始任务按钮的处理函数，延迟3秒后再开始采集"""
         task_id = self.task_id_input.text().strip()
-        
         if not task_id:
             QMessageBox.warning(self, "错误", "请输入任务ID")
             return
-            
         # 禁用开始按钮，启用结束按钮
         self.start_task_button.setEnabled(False)
         self.end_task_button.setEnabled(True)
-        
-        # 按钮视觉反馈
+        # 按钮视觉反馈：准备中
+        self.start_task_button.setText("准备中...")
+        self.start_task_button.setStyleSheet("background-color: yellow; color: black;")
+        self.end_task_button.setText("结束采集")
+        self.end_task_button.setStyleSheet("background-color: red; color: white;")
+        # 日志反馈
+        self.textBrowser_log.append(f"<font color='orange'>【提示】3秒后开始采集任务: {task_id}，请准备动作</font>")
+        # 3秒后真正开始采集
+        QTimer.singleShot(3000, lambda: self._do_start_task(task_id))
+
+    def _do_start_task(self, task_id):
+        # 按钮视觉反馈：采集中
         self.start_task_button.setText("采集中...")
         self.start_task_button.setStyleSheet("background-color: lime; color: black;")
         self.end_task_button.setText("结束采集")
         self.end_task_button.setStyleSheet("background-color: red; color: white;")
-        
         # 日志反馈
         self.textBrowser_log.append(f"<font color='lime'>【提示】已开始采集任务: {task_id}</font>")
-        
         # 开始任务
         self.start_task_collection(task_id)
-        
+        # 自动3秒后结束采集
+        QTimer.singleShot(3000, self._auto_end_task)
+
+    def _auto_end_task(self):
+        if self.end_task_button.isEnabled():
+            self.end_task()
+            self.textBrowser_log.append("<font color='orange'>【提示】采集已自动结束</font>")
+
     def end_task(self):
         """点击结束任务按钮的处理函数"""
         # 启用开始按钮，禁用结束按钮
@@ -1792,36 +1805,27 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
             self.current_task_id = None
 
     def merge_device_data(self):
-        """合并两个设备的数据"""
         if not self.current_task_id:
             return
-        # 从两个设备的处理线程获取数据
         device1_data = self.device_task_buffers.get('esp32_1', [])
         device2_data = self.device_task_buffers.get('esp32_2', [])
         if not device1_data or not device2_data:
             self.textBrowser_log.append("<font color='yellow'>至少有一个设备的数据为空，无法合并</font>")
             return
-        # 合并数据
         merged_file = merge_task_data(device1_data, device2_data, self.current_task_id, self.current_user_name)
         if merged_file:
             self.textBrowser_log.append(f"<font color='green'>已合并设备数据并保存到: {merged_file}</font>")
-            # 新增：自动上传融合后的csv内容到服务器
             try:
-                import csv
-                merged_data = []
-                with open(merged_file, 'r', newline='') as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        merged_data.append(row)
-                # 上传到服务器（直接调用本地函数，不再import）
-                success = send_data_to_server(merged_data, self.server_url)
+                with open(merged_file, 'r', encoding='utf-8') as f:
+                    file_content = f.read()
+                merged_filename = os.path.basename(merged_file)
+                success = send_csv_file_to_server(merged_filename, file_content, self.server_url)
                 if success:
                     self.textBrowser_log.append(f"<font color='green'>融合数据已上传服务器: {merged_file}</font>")
                 else:
                     self.textBrowser_log.append(f"<font color='red'>融合数据上传服务器失败: {merged_file}</font>")
             except Exception as e:
                 self.textBrowser_log.append(f"<font color='red'>融合数据上传异常: {e}</font>")
-        # 清空任务ID和缓冲区
         self.current_task_id = None
         for device_id in self.device_task_buffers:
             self.device_task_buffers[device_id] = []
@@ -2085,52 +2089,72 @@ def parse_task_id(task_id):
 
 
 def save_and_send_task_data(task_data_buffer, task_id, user_name, server_url, enable_server_save, device_id=None):
-    """保存和发送任务数据，支持多设备区分"""
     if not task_data_buffer:
         print("task_data_buffer 为空，未保存或发送数据")
         return
     try:
-        # 使用通用函数解析任务ID
         action, sequence = parse_task_id(task_id)
-
         folder = f"data/{action}"
         if not path.exists(folder):
             mkdir(folder)
-
-        # 生成文件名，包含设备ID以避免覆盖
         device_suffix = f"_{device_id}" if device_id else ""
         filename = f"{action}_{user_name}_{sequence}{device_suffix}.csv"
         filepath = os.path.join(folder, filename)
-
         print(f"保存数据到文件: {filepath}, 动作: {action}, 序号: {sequence}, 设备: {device_id or 'unknown'}")
-
-        # 保存到本地文件（始终保存）
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(task_data_buffer[0].keys())
             for row in task_data_buffer:
                 writer.writerow(row.values())
         print(f"本地保存文件: {filename}, 数据量: {len(task_data_buffer)} 条")
-
-        # 无论enable_server_save是否为True，只要有数据都尝试上传
-        print(f"准备发送批量数据: {len(task_data_buffer)} 条")
-        print(f"服务器地址: {server_url}")
-        # 为每条数据添加元数据
-        for data in task_data_buffer:
-            data['user_name'] = user_name
-            data['action'] = action
-            data['sequence'] = sequence
-            data['file_name'] = filename
-            # 添加设备ID区分数据来源
-            if device_id:
-                data['device_id'] = device_id
-        success = send_data_to_server(task_data_buffer, server_url)
+        # 直接上传csv文件内容
+        with open(filepath, 'r', encoding='utf-8') as f:
+            file_content = f.read()
+        success = send_csv_file_to_server(filename, file_content, server_url)
         if success:
             print(f"服务器数据发送成功: {filename}")
         else:
             print(f"警告: 服务器数据发送失败: {filename}")
     except Exception as e:
         print(f"保存任务数据时发生错误: {type(e).__name__}: {str(e)}")
+
+def send_csv_file_to_server(filename, file_content, server_url):
+    try:
+        server_url = server_url.strip()
+        if not server_url:
+            print("错误: 服务器URL为空")
+            return False
+        if not server_url.startswith(('http://', 'https://')):
+            server_url = 'http://' + server_url
+        server_url = server_url.rstrip('/')
+        if not server_url.endswith('/api/csi_data'):
+            server_url = server_url + '/api/csi_data'
+        if not re.match(r'^https?://[^\s/$.?#].[^\s]*$', server_url):
+            print(f"错误: 无效的服务器URL格式: {server_url}")
+            return False
+        data = {
+            'file_name': filename,
+            'file_content': file_content
+        }
+        session = requests.Session()
+        session.trust_env = False
+        headers = {'Content-Type': 'application/json'}
+        for attempt in range(3):
+            try:
+                response = session.post(server_url, json=data, headers=headers, timeout=30)
+                print(f"服务器响应状态码: {response.status_code}")
+                if response.status_code == 200:
+                    print(f"csv文件成功上传服务器: {filename}")
+                    return True
+                else:
+                    print(f"上传失败: {response.status_code} - {response.text}")
+            except Exception as e:
+                print(f"上传csv文件异常: {e}")
+                time.sleep(2)
+        return False
+    except Exception as e:
+        print(f"send_csv_file_to_server异常: {e}")
+        return False
 
 
 def send_data_to_server(data, server_url):

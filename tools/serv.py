@@ -604,35 +604,54 @@ def test_connection():
 def receive_csi_data():
     try:
         data = request.json
+        # 新增：如果是file_name和file_content方式
+        if isinstance(data, dict) and 'file_name' in data and 'file_content' in data:
+            file_name = data['file_name']
+            file_content = data['file_content']
+            if not file_name or not file_content:
+                logger.error("缺少file_name或file_content")
+                return jsonify({"status": "error", "message": "缺少file_name或file_content"}), 400
+            # 判断是否是merged文件
+            if file_name.endswith('_merged.csv'):
+                parts = file_name.split('_')
+                action = parts[0] if len(parts) > 0 else 'unknown'
+                save_dir = os.path.join(FILES_DIR, 'merged', action)
+                rel_path = os.path.join('merged', action, file_name)
+            else:
+                parts = file_name.split('_')
+                action = parts[0] if len(parts) > 0 else 'unknown'
+                save_dir = os.path.join(FILES_DIR, action)
+                rel_path = os.path.join(action, file_name)
+            os.makedirs(save_dir, exist_ok=True)
+            file_path = os.path.join(save_dir, file_name)
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(file_content)
+            logger.info(f"csv文件已保存: {file_path}")
+            return jsonify({
+                "status": "success",
+                "message": f"csv文件已保存: {file_path}",
+                "file": rel_path
+            })
+        # 兼容原有批量list上传
         if not data or not isinstance(data, list):
             logger.error("无效的批量数据")
             return jsonify({"status": "error", "message": "无效的批量数据"}), 400
-        
         logger.info(f"收到批量CSI数据: {len(data)}条")
-        
-        # 提取元数据
         first_record = data[0]
         user_name = first_record.get('user_name', 'unknown')
         action = first_record.get('action', first_record.get('taget', 'unknown'))
         sequence = first_record.get('sequence', '01')
-        
-        # 创建动作对应的目录
         action_dir = os.path.join(FILES_DIR, action)
         os.makedirs(action_dir, exist_ok=True)
-        
-        # 生成文件名
         filename = f"{action}_{user_name}_{sequence}.csv"
         filepath = os.path.join(action_dir, filename)
-        
-        # 总是创建新文件，不追加
-        with open(filepath, 'w', newline='', encoding='utf-8') as f:
+        file_exists = os.path.exists(filepath)
+        with open(filepath, 'a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            # 写入列名
-            writer.writerow(data[0].keys())
-            # 写入数据行
+            if not file_exists:
+                writer.writerow(data[0].keys())
             for row in data:
                 writer.writerow(row.values())
-        
         logger.info(f"成功保存{len(data)}条数据到新文件: {os.path.join(action, filename)}")
         return jsonify({
             "status": "success",
@@ -720,7 +739,7 @@ def predict():
                 
                 # 计算CSI数据的变化程度
                 if hasattr(csi_stats, 'get') and len(last_csi_features) > 0:
-                    avg_change = sum(csi_stats.get('diff_from_last', 0.0) for _ in range(min(len(last_csi_features), 3))) / min(len(last_csi_features), 3)
+                    avg_change = sum(float(csi_stats.get('diff_from_last', 0.0)) for _ in range(min(len(last_csi_features), 3))) / min(len(last_csi_features), 3)
                     logger.info(f"CSI数据平均变化程度: {avg_change:.4f}")
                     
                     # 如果CSI数据变化明显但预测不变，可能是模型问题
@@ -813,8 +832,6 @@ def analyze_csi_data(csi_data):
         
         # 添加差异值到结果
         stats["diff_from_last"] = diff_from_last
-        stats["status"] = "success"
-        
         return stats
         
     except Exception as e:
