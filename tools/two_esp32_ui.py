@@ -31,6 +31,10 @@ import pyqtgraph as pg
 CSI_SAMPLE_RATE = 100
 g_display_raw_data = True
 
+# 项目文件夹配置 - 新增
+PROJECT_FOLDER = "project_data"  # 默认项目文件夹名称
+CURRENT_PROJECT_NAME = "default_project"  # 当前项目名称
+
 # Remove invalid subcarriers
 CSI_VAID_SUBCARRIER_INTERVAL = 5
 csi_vaid_subcarrier_index = []
@@ -79,6 +83,34 @@ def init_device_data(device_id):
         g_radio_header_pd[device_id] = pd.DataFrame(np.zeros([10, len(CSI_DATA_COLUMNS_NAMES[1:-1])], dtype=np.int64),
                                        columns=pd.Index(CSI_DATA_COLUMNS_NAMES[1:-1]))
     return g_radio_header_pd[device_id]
+
+# 新增函数：获取项目数据路径
+def get_project_data_path(project_name=None):
+    """获取项目数据路径"""
+    if project_name is None:
+        project_name = CURRENT_PROJECT_NAME
+    
+    # 构建项目路径
+    project_path = os.path.join(PROJECT_FOLDER, project_name)
+    
+    # 确保项目目录存在
+    if not os.path.exists(project_path):
+        os.makedirs(project_path, exist_ok=True)
+        # 创建子目录
+        os.makedirs(os.path.join(project_path, "data"), exist_ok=True)
+        os.makedirs(os.path.join(project_path, "log"), exist_ok=True)
+        print(f"创建新项目目录: {project_path}")
+    
+    return project_path
+
+# 新增函数：设置当前项目
+def set_current_project(project_name):
+    """设置当前项目名称"""
+    global CURRENT_PROJECT_NAME
+    CURRENT_PROJECT_NAME = project_name
+    # 确保项目目录存在
+    get_project_data_path(project_name)
+    print(f"切换到项目: {project_name}")
 
 
 def clean_base64_string(input_str):
@@ -190,7 +222,8 @@ def evaluate_data_send(serial_queue_write, folder_path):
         command = f"csi --train_start"
         serial_queue_write.put(command)
     tcpCliSock = socket.socket()
-    device_info_series = pd.read_csv('log/device_info.csv').iloc[-1]
+    project_path = get_project_data_path()
+    device_info_series = pd.read_csv(os.path.join(project_path, 'log/device_info.csv')).iloc[-1]
     print(f"connect:{device_info_series['ip']},{device_info_series['port']}")
     tcpCliSock.connect((device_info_series['ip'], device_info_series['port']))
     file_name_list = sorted(os.listdir(folder_path))
@@ -261,6 +294,9 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         # 用户名和任务设置（确保在setupUi前初始化）
         self.current_user_name = "user01"  # 默认用户名
         
+        # 项目设置 - 新增
+        self.current_project_name = CURRENT_PROJECT_NAME  # 当前项目名称
+        
         # 先初始化UI
         self.setupUi()
         
@@ -319,11 +355,104 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         # 添加设备切换下拉框
         self.setup_device_switcher()
         
+    def setup_project_controls(self):
+        """设置项目控件"""
+        try:
+            # 创建项目设置分组框
+            self.groupBox_project = QGroupBox("项目设置")
+            self.groupBox_project.setFont(QFont("Arial", 10, QFont.Bold))
+            
+            # 创建水平布局
+            layout = QHBoxLayout()
+            
+            # 项目名称标签
+            self.label_project = QLabel("项目名称:")
+            self.label_project.setFont(QFont("Arial", 9))
+            layout.addWidget(self.label_project)
+            
+            # 项目名称输入框
+            self.lineEdit_project = QLineEdit()
+            self.lineEdit_project.setText(self.current_project_name)
+            self.lineEdit_project.setFont(QFont("Arial", 9))
+            self.lineEdit_project.setMaximumWidth(200)
+            layout.addWidget(self.lineEdit_project)
+            
+            # 切换项目按钮
+            self.pushButton_switch_project = QPushButton("切换项目")
+            self.pushButton_switch_project.setFont(QFont("Arial", 9))
+            self.pushButton_switch_project.setMaximumWidth(100)
+            self.pushButton_switch_project.clicked.connect(self.switch_project)
+            layout.addWidget(self.pushButton_switch_project)
+            
+            # 当前项目状态标签
+            self.label_current_project = QLabel(f"当前项目: {self.current_project_name}")
+            self.label_current_project.setFont(QFont("Arial", 9))
+            self.label_current_project.setStyleSheet("color: green")
+            layout.addWidget(self.label_current_project)
+            
+            # 添加弹性空间
+            layout.addStretch()
+            
+            self.groupBox_project.setLayout(layout)
+            
+            # 将项目设置组添加到主布局的顶部
+            if hasattr(self, 'main_layout') and self.main_layout:
+                self.main_layout.insertWidget(0, self.groupBox_project)
+            elif hasattr(self, 'verticalLayout_17') and self.verticalLayout_17:
+                self.verticalLayout_17.insertWidget(0, self.groupBox_project)
+            elif hasattr(self, 'verticalLayout') and self.verticalLayout:
+                self.verticalLayout.insertWidget(0, self.groupBox_project)
+            else:
+                # 如果找不到主布局，尝试添加到centralwidget
+                if hasattr(self, 'centralwidget'):
+                    main_layout = self.centralwidget.layout()
+                    if main_layout:
+                        main_layout.insertWidget(0, self.groupBox_project)
+                        
+        except Exception as e:
+            print(f"设置项目控件时出错: {e}")
+
+    def switch_project(self):
+        """切换项目"""
+        try:
+            new_project_name = self.lineEdit_project.text().strip()
+            if not new_project_name:
+                self.textBrowser_log.append(f"<font color='red'>项目名称不能为空</font>")
+                return
+                
+            # 检查项目名称是否有效
+            if not re.match(r'^[a-zA-Z0-9_\-]+$', new_project_name):
+                self.textBrowser_log.append(f"<font color='red'>项目名称只能包含字母、数字、下划线和连字符</font>")
+                return
+                
+            # 设置新项目
+            set_current_project(new_project_name)
+            self.current_project_name = new_project_name
+            
+            # 通知所有串口进程更新项目名称
+            for device_id, queue in self.serial_queues_write.items():
+                if hasattr(queue, 'put'):
+                    queue.put(f"set_project:{new_project_name}")
+            
+            # 更新状态标签
+            self.label_current_project.setText(f"当前项目: {new_project_name}")
+            
+            # 显示成功消息
+            project_path = get_project_data_path()
+            self.textBrowser_log.append(f"<font color='green'>已切换到项目: {new_project_name}</font>")
+            self.textBrowser_log.append(f"<font color='blue'>项目路径: {project_path}</font>")
+            self.textBrowser_log.append(f"<font color='cyan'>已通知所有设备切换到项目: {new_project_name}</font>")
+            
+        except Exception as e:
+            self.textBrowser_log.append(f"<font color='red'>切换项目失败: {e}</font>")
+        
     def setupUi(self):
         """初始化UI界面"""
         # 设置UI组件
         super().setupUi(self)  # 调用父类的setupUi方法而不是自己的
-        self.setWindowTitle("ESP CSI Tool - 多设备数据融合")
+        
+        # 设置窗口标题
+        self.setWindowTitle("ESP CSI 数据采集系统 - 多设备版")
         
         # 保留这些重要组件，不要删除
         important_components = [
@@ -402,6 +531,9 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
             self.main_layout = self.centralwidget.layout()
             if not self.main_layout:
                 self.main_layout = QVBoxLayout(self.centralwidget)
+        
+        # 添加项目设置控件 - 在设置主布局之后
+        self.setup_project_controls()
         
         # 配置新的组件
         self.setup_wifi_connection()
@@ -722,7 +854,8 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
             data = {
                 'csi_data': self.csi_buffer[device_id],
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
-                'device_id': device_id
+                'device_id': device_id,
+                'project_name': CURRENT_PROJECT_NAME  # 新增：发送项目名称
             }
             
             # 发送预测请求
@@ -923,7 +1056,9 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
 
     def get_next_sequence(self, user_name, action):
         """获取下一个序号"""
-        folder = f"data/{action}"
+        # 使用项目路径
+        project_path = get_project_data_path()
+        folder = os.path.join(project_path, "data", action)
         if not os.path.exists(folder):
             os.makedirs(folder, exist_ok=True)
             return 1
@@ -2088,29 +2223,42 @@ def parse_task_id(task_id):
         return task_id, "01"
 
 
-def save_and_send_task_data(task_data_buffer, task_id, user_name, server_url, enable_server_save, device_id=None):
+def save_and_send_task_data(task_data_buffer, task_id, user_name, server_url, enable_server_save, device_id=None, project_name=None):
     if not task_data_buffer:
         print("task_data_buffer 为空，未保存或发送数据")
         return
     try:
         action, sequence = parse_task_id(task_id)
-        folder = f"data/{action}"
+        
+        # 使用传入的项目名称，如果没有则使用全局变量
+        if project_name is None:
+            project_name = CURRENT_PROJECT_NAME
+            print(f"警告: 未传入项目名称，使用默认项目: {project_name}")
+        else:
+            print(f"使用传入的项目名称: {project_name}")
+        
+        # 使用项目路径
+        project_path = get_project_data_path(project_name)
+        folder = os.path.join(project_path, "data", action)
         if not path.exists(folder):
             mkdir(folder)
+            
         device_suffix = f"_{device_id}" if device_id else ""
         filename = f"{action}_{user_name}_{sequence}{device_suffix}.csv"
         filepath = os.path.join(folder, filename)
-        print(f"保存数据到文件: {filepath}, 动作: {action}, 序号: {sequence}, 设备: {device_id or 'unknown'}")
+        print(f"保存数据到项目文件: {filepath}, 动作: {action}, 序号: {sequence}, 设备: {device_id or 'unknown'}, 项目: {project_name}")
+        
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(task_data_buffer[0].keys())
             for row in task_data_buffer:
                 writer.writerow(row.values())
-        print(f"本地保存文件: {filename}, 数据量: {len(task_data_buffer)} 条")
+        print(f"项目本地保存文件: {filename}, 数据量: {len(task_data_buffer)} 条")
+        
         # 直接上传csv文件内容
         with open(filepath, 'r', encoding='utf-8') as f:
             file_content = f.read()
-        success = send_csv_file_to_server(filename, file_content, server_url)
+        success = send_csv_file_to_server(filename, file_content, server_url, project_name)
         if success:
             print(f"服务器数据发送成功: {filename}")
         else:
@@ -2118,7 +2266,7 @@ def save_and_send_task_data(task_data_buffer, task_id, user_name, server_url, en
     except Exception as e:
         print(f"保存任务数据时发生错误: {type(e).__name__}: {str(e)}")
 
-def send_csv_file_to_server(filename, file_content, server_url):
+def send_csv_file_to_server(filename, file_content, server_url, project_name=None):
     try:
         server_url = server_url.strip()
         if not server_url:
@@ -2132,9 +2280,18 @@ def send_csv_file_to_server(filename, file_content, server_url):
         if not re.match(r'^https?://[^\s/$.?#].[^\s]*$', server_url):
             print(f"错误: 无效的服务器URL格式: {server_url}")
             return False
+        
+        # 使用传入的项目名称，如果没有则使用全局变量
+        if project_name is None:
+            project_name = CURRENT_PROJECT_NAME
+            print(f"警告: send_csv_file_to_server: 未传入项目名称，使用默认项目: {project_name}")
+        else:
+            print(f"send_csv_file_to_server: 使用传入的项目名称: {project_name}")
+            
         data = {
             'file_name': filename,
-            'file_content': file_content
+            'file_content': file_content,
+            'project_name': project_name  # 使用传入的项目名称
         }
         session = requests.Session()
         session.trust_env = False
@@ -2144,7 +2301,7 @@ def send_csv_file_to_server(filename, file_content, server_url):
                 response = session.post(server_url, json=data, headers=headers, timeout=30)
                 print(f"服务器响应状态码: {response.status_code}")
                 if response.status_code == 200:
-                    print(f"csv文件成功上传服务器: {filename}")
+                    print(f"csv文件成功上传服务器: {filename}, 项目: {project_name}")
                     return True
                 else:
                     print(f"上传失败: {response.status_code} - {response.text}")
@@ -2269,7 +2426,7 @@ def send_data_to_server(data, server_url):
         return False
 
 
-def serial_handle(queue_read, queue_write, port, device_id=None):
+def serial_handle(queue_read, queue_write, port, device_id=None, project_name=None):
     ser = None
     try:
         # 增加超时时间，提高稳定性
@@ -2284,15 +2441,21 @@ def serial_handle(queue_read, queue_write, port, device_id=None):
     print(f"打开串口: {port}, 设备ID: {device_id or '未指定'}")
     print("CSI数据过滤已禁用，将保存所有数据包")
     ser.reset_input_buffer()
-    folder_list = ['log', 'data']
+    
+    # 使用项目路径创建文件夹
+    if project_name:
+        project_path = os.path.join(PROJECT_FOLDER, project_name)
+    else:
+        project_path = get_project_data_path()
+    folder_list = [os.path.join(project_path, 'log'), os.path.join(project_path, 'data')]
     for folder in folder_list:
         if not path.exists(folder):
             try:
                 mkdir(folder)
             except Exception as e:
-                print(f"创建文件夹失败: {folder}, 错误: {e}")
+                print(f"创建项目文件夹失败: {folder}, 错误: {e}")
                 data_series = pd.Series(index=['type', 'data'],
-                                        data=['FAIL_EVENT', f"创建文件夹失败: {folder}, 错误: {e}"])
+                                        data=['FAIL_EVENT', f"创建项目文件夹失败: {folder}, 错误: {e}"])
                 queue_read.put(data_series)
                 if ser:
                     ser.close()
@@ -2300,10 +2463,14 @@ def serial_handle(queue_read, queue_write, port, device_id=None):
                 return
     # 为每个设备创建独立的文件
     device_suffix = f"_{device_id}" if device_id else ""
+    if project_name:
+        project_path = os.path.join(PROJECT_FOLDER, project_name)
+    else:
+        project_path = get_project_data_path()
     data_valid_list = pd.DataFrame(
         columns=pd.Index(['type', 'columns_names', 'file_name', 'file_fd', 'file_writer']),
-        data=[["CSI_DATA", CSI_DATA_COLUMNS_NAMES, f"log/csi_data{device_suffix}.csv", None, None],
-              ["DEVICE_INFO", DEVICE_INFO_COLUMNS_NAMES, f"log/device_info{device_suffix}.csv", None, None]]
+        data=[["CSI_DATA", CSI_DATA_COLUMNS_NAMES, os.path.join(project_path, f"log/csi_data{device_suffix}.csv"), None, None],
+              ["DEVICE_INFO", DEVICE_INFO_COLUMNS_NAMES, os.path.join(project_path, f"log/device_info{device_suffix}.csv"), None, None]]
     )
     log_data_writer = None
     try:
@@ -2311,7 +2478,7 @@ def serial_handle(queue_read, queue_write, port, device_id=None):
             data_valid['file_fd'] = open(data_valid['file_name'], 'w')
             data_valid['file_writer'] = csv.writer(data_valid['file_fd'])
             data_valid['file_writer'].writerow(data_valid['columns_names'])
-        log_data_writer = open(f"log/log_data{device_suffix}.txt", 'w+')
+        log_data_writer = open(os.path.join(project_path, f"log/log_data{device_suffix}.txt"), 'w+')
     except Exception as e:
         print(f"打开文件失败: {e}")
         data_series = pd.Series(index=['type', 'data'], data=['FAIL_EVENT', f"打开文件失败: {e}"])
@@ -2398,6 +2565,11 @@ def serial_handle(queue_read, queue_write, port, device_id=None):
                     current_taget = command.split(":", 1)[1]
                     print(f"设置当前taget为: {current_taget}")
                     continue
+                if command.startswith("set_project:"):
+                    new_project_name = command.split(":", 1)[1]
+                    project_name = new_project_name
+                    print(f"设置当前项目为: {project_name}")
+                    continue
                 if command.startswith("start_task:"):
                     current_task_id = command.split(":")[1]
                     action, sequence_str = parse_task_id(current_task_id)
@@ -2411,9 +2583,9 @@ def serial_handle(queue_read, queue_write, port, device_id=None):
                 if command == "end_task" or command.startswith("end_task:"):
                     if task_data_buffer and current_task_id:
                         print(
-                            f"处理end_task命令，准备保存和发送数据：任务ID={current_task_id}，数据量={len(task_data_buffer)}，服务器保存={enable_server_save}, 设备ID={device_id or '未指定'}")
+                            f"处理end_task命令，准备保存和发送数据：任务ID={current_task_id}，数据量={len(task_data_buffer)}，服务器保存={enable_server_save}, 设备ID={device_id or '未指定'}, 项目名称={project_name}")
                         save_and_send_task_data(task_data_buffer, current_task_id, current_user_name, server_url,
-                                                enable_server_save, device_id)
+                                                enable_server_save, device_id, project_name)
                     task_data_buffer.clear()
                     current_task_id = None
                     continue
@@ -2584,7 +2756,11 @@ def serial_handle(queue_read, queue_write, port, device_id=None):
                                         # 创建文件（如果需要）
                                         if current_file_key not in created_files:
                                             try:
-                                                folder = f"data/{action}"
+                                                if project_name:
+                                                    project_path = os.path.join(PROJECT_FOLDER, project_name)
+                                                else:
+                                                    project_path = get_project_data_path()
+                                                folder = os.path.join(project_path, "data", action)
                                                 if not path.exists(folder):
                                                     mkdir(folder)
                                                 csi_target_data_file_name = f"{folder}/{current_file_key}.csv"
@@ -2679,9 +2855,9 @@ def serial_handle(queue_read, queue_write, port, device_id=None):
                             # 如果检测到run状态，额外发送一个更明确的成功消息
                             if 'wifi:state:' in strings.lower() and 'run' in strings.lower():
                                 extra_series = pd.Series(index=['type', 'tag', 'timestamp', 'data'],
-                                                         data=['LOG_DATA', 'I',
-                                                               datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
-                                                               f"WiFi连接成功！设备 {device_id} 已进入运行状态"])
+                                                          data=['LOG_DATA', 'I',
+                                                                datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                                                                f"WiFi连接成功！设备 {device_id} 已进入运行状态"])
                                 if device_id:
                                     extra_series['device_id'] = device_id
                                 if not queue_read.full():
@@ -2698,23 +2874,23 @@ def serial_handle(queue_read, queue_write, port, device_id=None):
                         if not queue_read.full():
                             queue_read.put(data_series)
                             
-                    # 添加对CSI相关日志的特殊处理
-                    elif 'csi' in strings.lower() or 'radar' in strings.lower():
-                        csi_series = pd.Series(index=['type', 'tag', 'timestamp', 'data'],
-                                               data=['LOG_DATA', 'I',
-                                                     datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
-                                                     f"CSI状态: {strings}"])
-                        # 添加设备ID
-                        if device_id:
-                            csi_series['device_id'] = device_id
-                        if not queue_read.full():
-                            queue_read.put(csi_series)
+                        # 添加对CSI相关日志的特殊处理
+                        elif 'csi' in strings.lower() or 'radar' in strings.lower():
+                            csi_series = pd.Series(index=['type', 'tag', 'timestamp', 'data'],
+                                                   data=['LOG_DATA', 'I',
+                                                         datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                                                         f"CSI状态: {strings}"])
+                            # 添加设备ID
+                            if device_id:
+                                csi_series['device_id'] = device_id
+                            if not queue_read.full():
+                                queue_read.put(csi_series)
         except Exception as e:
             print(f"处理数据异常: {e}")
             continue
 
 
-def merge_task_data(task_data1, task_data2, task_id, user_name, output_folder="data/merged"):
+def merge_task_data(task_data1, task_data2, task_id, user_name, output_folder=None):
     """合并两个设备的任务数据
     
     Args:
@@ -2722,7 +2898,7 @@ def merge_task_data(task_data1, task_data2, task_id, user_name, output_folder="d
         task_data2: 第二个设备的数据
         task_id: 任务ID
         user_name: 用户名
-        output_folder: 输出文件夹，默认为data/merged
+        output_folder: 输出文件夹，默认为项目目录下的data/merged
         
     Returns:
         合并后的文件名
@@ -2730,11 +2906,15 @@ def merge_task_data(task_data1, task_data2, task_id, user_name, output_folder="d
     if not task_data1 or not task_data2:
         print("至少有一个设备的数据为空，无法合并")
         return None
+    
+    # 如果没有指定输出文件夹，使用项目路径
+    if output_folder is None:
+        output_folder = os.path.join(get_project_data_path(), "data", "merged")
         
     try:
         # 创建输出文件夹
         if not path.exists(output_folder):
-            mkdir(output_folder)
+            os.makedirs(output_folder, exist_ok=True)
             
         # 解析任务ID
         action, sequence = parse_task_id(task_id)
@@ -2816,12 +2996,14 @@ if __name__ == '__main__':
                                        args=(serial_queues_read['esp32_1'], 
                                              serial_queues_write['esp32_1'], 
                                              serial_port,
-                                             'esp32_1'))  # 传递设备ID
+                                             'esp32_1',
+                                             CURRENT_PROJECT_NAME))  # 传递设备ID和项目名称
         serial_handle_process2 = Process(target=serial_handle, 
                                        args=(serial_queues_read['esp32_2'], 
                                              serial_queues_write['esp32_2'], 
                                              serial_port2,
-                                             'esp32_2'))  # 传递设备ID
+                                             'esp32_2',
+                                             CURRENT_PROJECT_NAME))  # 传递设备ID和项目名称
         serial_handle_process1.start()
         serial_handle_process2.start()
         
@@ -2844,7 +3026,8 @@ if __name__ == '__main__':
                                       args=(serial_queues_read['esp32_1'], 
                                             serial_queues_write['esp32_1'], 
                                             serial_port,
-                                            'esp32_1'))  # 传递设备ID
+                                            'esp32_1',
+                                            CURRENT_PROJECT_NAME))  # 传递设备ID和项目名称
         serial_handle_process.start()
         
         # 输出模式信息

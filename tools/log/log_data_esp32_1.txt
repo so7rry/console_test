@@ -1,1 +1,111 @@
-xgEOFUYxYjFSNTZZCoTGuG7oExu7Z1+rH+LkFqhCeG5YpjTOINiE2G0UQWAlvDH8WfyB/J38rfyx/LX8xfzd/NnMtTB4hC/L4v96UwYChgIGAgICAgICAgIA=
+radar --csi_output_type LLFT --csi_output_format base64
+csi> 
+csi> radar --csi_en 0
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: unexpected argument "0"
+Command returned non-zero error code: 0xffffffff (ESP_FAIL)
+csi> 
+csi> radar --csi_en 1
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: unexpected argument "1"
+Command returned non-zero error code: 0xffffffff (ESP_FAIL)
+csi> 
+csi> 
+radar --get_config
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: too many errors to display
+Command returned non-zero error code: 0xffffffff (ESP_FAIL)
+csi> 
+csi> 
+radar --csi_output_type LLFT --csi_output_format base64
+csi> 
+csi> radar --csi_en 0
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: unexpected argument "0"
+Command returned non-zero error code: 0xffffffff (ESP_FAIL)
+csi> 
+csi> 
+radar --csi_en 1
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: unexpected argument "1"
+Command returned non-zero error code: 0xffffffff (ESP_FAIL)
+csi> 
+csi> 
+radar --get_config
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: invalid option "-?"
+radar: too many errors to display
+Command returned non-zero error code: 0xffffffff (ESP_FAIL)
+csi> 
+csi> 
+ping --abort
+"E (199483) ping_sock: esp_ping_stop(348): ping handle can't be null\r\n"
+"E (199484) ping_sock: esp_ping_delete_session(324): ping handle can't be null\r\n"
+W (199495) ping_cmd: esp_ping stop
+csi> 
+csi> wifi_config --disconnect
+csi> 
+csi> wifi_config --ssid "SSPU-1X"
+W (201920) app_main: Wi-Fi disconnected
+I (201921) wifi_cmd: sta disconnect, s_reconnect...
+W (204329) app_main: Wi-Fi disconnected
+I (204329) wifi_cmd: sta disconnect, s_reconnect...
+csi> 
+csi> 
+W (206737) app_main: Wi-Fi disconnected
+I (206738) wifi_cmd: sta disconnect, s_reconnect...
+ping --abort
+"E (208808) ping_sock: esp_ping_stop(348): ping handle can't be null\r\n"
+"E (208809) ping_sock: esp_ping_delete_session(324): ping handle can't be null\r\n"
+W (208820) ping_cmd: esp_ping stop
+csi> 
+csi> wifi_config --disconnect
+csi> 
+csi> wifi_config --ssid "SSPU-1X"
+W (211245) app_main: Wi-Fi disconnected
+I (211246) wifi_cmd: sta disconnect, s_reconnect...
+W (213653) app_main: Wi-Fi disconnected
+I (213654) wifi_cmd: sta disconnect, s_reconnect...
+csi> 
+csi> 
+W (216061) app_main: Wi-Fi disconnected
+I (216062) wifi_cmd: sta disconnect, s_reconnect...
+W (218469) app_main: Wi-Fi disconnected
+I (218470) wifi_cmd: sta disconnect, s_reconnect...
+W (220878) app_main: Wi-Fi disconnected
+I (220878) wifi_cmd: sta disconnect, s_reconnect...
+W (223286) app_main: Wi-Fi disconnected
+I (223287) wifi_cmd: sta disconnect, s_reconnect...
+W (225694) app_main: Wi-Fi disconnected
+I (225695) wifi_cmd: sta disconnect, s_reconnect...

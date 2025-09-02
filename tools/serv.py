@@ -41,7 +41,7 @@ app = Flask(__name__)
 
 # 保存数据的目录
 DATA_DIR = "server_data"
-FILES_DIR = os.path.join(DATA_DIR, "files")
+FILES_DIR = os.path.join(DATA_DIR, "files")  # 保留兼容性
 MODEL_DIR = os.path.join(DATA_DIR, "models")
 
 # 预训练模型路径
@@ -59,10 +59,17 @@ last_csi_features = deque(maxlen=3)  # 保存最近3次CSI特征
 # 确保目录存在
 def ensure_directories():
     try:
+        # 创建基础目录
         os.makedirs(FILES_DIR, exist_ok=True)
         os.makedirs(MODEL_DIR, exist_ok=True)
-        logger.info(f"数据保存目录: {os.path.abspath(FILES_DIR)}")
+        
+        # 创建默认项目目录结构
+        default_project_dir = os.path.join(DATA_DIR, "default_project", "data")
+        os.makedirs(default_project_dir, exist_ok=True)
+        
+        logger.info(f"数据保存目录: {os.path.abspath(DATA_DIR)}")
         logger.info(f"模型目录: {os.path.abspath(MODEL_DIR)}")
+        logger.info(f"默认项目目录: {os.path.abspath(default_project_dir)}")
     except Exception as e:
         logger.error(f"创建目录失败: {e}")
         raise
@@ -608,29 +615,56 @@ def receive_csi_data():
         if isinstance(data, dict) and 'file_name' in data and 'file_content' in data:
             file_name = data['file_name']
             file_content = data['file_content']
+            project_name = data.get('project_name', 'default_project')  # 新增：获取项目名称
+            
             if not file_name or not file_content:
                 logger.error("缺少file_name或file_content")
                 return jsonify({"status": "error", "message": "缺少file_name或file_content"}), 400
             # 判断是否是merged文件
             if file_name.endswith('_merged.csv'):
-                parts = file_name.split('_')
-                action = parts[0] if len(parts) > 0 else 'unknown'
-                save_dir = os.path.join(FILES_DIR, 'merged', action)
-                rel_path = os.path.join('merged', action, file_name)
+                # 对于merged文件，去掉_merged.csv后缀，然后提取动作名称
+                base_name = file_name[:-11]  # 去掉 '_merged.csv'
+                parts = base_name.split('_')
+                # 找到包含'user'的部分，动作名称是它之前的所有部分
+                user_index = -1
+                for i, part in enumerate(parts):
+                    if 'user' in part.lower():
+                        user_index = i
+                        break
+                if user_index > 0:
+                    action = '_'.join(parts[:user_index])
+                else:
+                    action = parts[0] if len(parts) > 0 else 'unknown'
+                # 使用项目路径：server_data/项目名称/data/merged/动作名称/
+                save_dir = os.path.join(DATA_DIR, project_name, 'data', 'merged', action)
+                rel_path = os.path.join(project_name, 'data', 'merged', action, file_name)
             else:
+                # 对于普通文件，提取动作名称（在user之前的所有部分）
                 parts = file_name.split('_')
-                action = parts[0] if len(parts) > 0 else 'unknown'
-                save_dir = os.path.join(FILES_DIR, action)
-                rel_path = os.path.join(action, file_name)
+                # 找到包含'user'的部分，动作名称是它之前的所有部分
+                user_index = -1
+                for i, part in enumerate(parts):
+                    if 'user' in part.lower():
+                        user_index = i
+                        break
+                if user_index > 0:
+                    action = '_'.join(parts[:user_index])
+                else:
+                    action = parts[0] if len(parts) > 0 else 'unknown'
+                # 使用项目路径：server_data/项目名称/data/动作名称/
+                save_dir = os.path.join(DATA_DIR, project_name, 'data', action)
+                rel_path = os.path.join(project_name, 'data', action, file_name)
             os.makedirs(save_dir, exist_ok=True)
             file_path = os.path.join(save_dir, file_name)
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(file_content)
-            logger.info(f"csv文件已保存: {file_path}")
+            logger.info(f"项目 [{project_name}] csv文件已保存: {file_path}")
             return jsonify({
                 "status": "success",
-                "message": f"csv文件已保存: {file_path}",
-                "file": rel_path
+                "message": f"项目 [{project_name}] csv文件已保存: {file_path}",
+                "file": rel_path,
+                "project_name": project_name,
+                "action": action
             })
         # 兼容原有批量list上传
         if not data or not isinstance(data, list):
@@ -641,7 +675,10 @@ def receive_csi_data():
         user_name = first_record.get('user_name', 'unknown')
         action = first_record.get('action', first_record.get('taget', 'unknown'))
         sequence = first_record.get('sequence', '01')
-        action_dir = os.path.join(FILES_DIR, action)
+        project_name = first_record.get('project_name', 'default_project')  # 新增：获取项目名称
+        
+        # 使用项目路径：server_data/项目名称/data/动作名称/
+        action_dir = os.path.join(DATA_DIR, project_name, 'data', action)
         os.makedirs(action_dir, exist_ok=True)
         filename = f"{action}_{user_name}_{sequence}.csv"
         filepath = os.path.join(action_dir, filename)
@@ -652,11 +689,13 @@ def receive_csi_data():
                 writer.writerow(data[0].keys())
             for row in data:
                 writer.writerow(row.values())
-        logger.info(f"成功保存{len(data)}条数据到新文件: {os.path.join(action, filename)}")
+        logger.info(f"项目 [{project_name}] 成功保存{len(data)}条数据到新文件: {os.path.join(project_name, 'data', action, filename)}")
         return jsonify({
             "status": "success",
-            "message": f"成功保存{len(data)}条数据到新文件: {os.path.join(action, filename)}",
-            "file": os.path.join(action, filename)
+            "message": f"项目 [{project_name}] 成功保存{len(data)}条数据到新文件: {os.path.join(project_name, 'data', action, filename)}",
+            "file": os.path.join(project_name, 'data', action, filename),
+            "project_name": project_name,
+            "action": action
         })
     except Exception as e:
         logger.error(f"保存数据失败: {e}")
@@ -679,21 +718,36 @@ def upload_file():
         filename = file.filename
         # 处理带下划线的动作名称
         parts = filename.split('_')
-        if len(parts) > 2:  # 如果动作名称包含下划线
-            action = '_'.join(parts[:-2])  # 合并动作名称部分（排除用户名和序号）
+        # 找到包含'user'的部分，动作名称是它之前的所有部分
+        user_index = -1
+        for i, part in enumerate(parts):
+            if 'user' in part.lower():
+                user_index = i
+                break
+        if user_index > 0:
+            action = '_'.join(parts[:user_index])
         else:
-            action = parts[0]
+            action = parts[0] if len(parts) > 0 else 'unknown'
         
-        # 创建动作对应的目录
-        action_dir = os.path.join(FILES_DIR, action)
+        # 获取项目名称（从请求参数或文件名推断）
+        project_name = request.form.get('project_name', 'default_project')
+        
+        # 创建项目动作对应的目录：server_data/项目名称/data/动作名称/
+        action_dir = os.path.join(DATA_DIR, project_name, 'data', action)
         os.makedirs(action_dir, exist_ok=True)
         
         # 保存文件到对应目录
         filepath = os.path.join(action_dir, filename)
         file.save(filepath)
-        logger.info(f"文件保存成功: {filepath}")
+        logger.info(f"项目 [{project_name}] 文件保存成功: {filepath}")
         
-        return jsonify({"status": "success", "message": "文件上传成功", "file": os.path.join(action, filename)})
+        return jsonify({
+            "status": "success", 
+            "message": f"项目 [{project_name}] 文件上传成功", 
+            "file": os.path.join(project_name, 'data', action, filename),
+            "project_name": project_name,
+            "action": action
+        })
     except Exception as e:
         logger.error(f"文件上传失败: {e}")
         return jsonify({"status": "error", "message": f"文件上传失败: {e}"}), 500
@@ -992,9 +1046,13 @@ def debug_prediction():
 # 主函数
 if __name__ == '__main__':
     logger.info("启动CSI数据接收服务器...")
-    logger.info(f"数据保存目录: {os.path.abspath(FILES_DIR)}")
+    logger.info(f"数据保存根目录: {os.path.abspath(DATA_DIR)}")
+    logger.info(f"兼容性文件目录: {os.path.abspath(FILES_DIR)}")
     logger.info(f"使用模型路径: {os.path.abspath(CUSTOM_MODEL_PATH)}")
     logger.info(f"模型加载状态: {'成功' if loaded_model is not None else '失败'}")
+    logger.info("新的项目目录结构:")
+    logger.info("  - server_data/项目名称/data/动作名称/")
+    logger.info("  - server_data/项目名称/data/merged/动作名称/")
     logger.info("API端点:")
     logger.info("  - /api/test_connection  - 测试服务器连接")
     logger.info("  - /api/csi_data         - 接收批量CSI数据")
