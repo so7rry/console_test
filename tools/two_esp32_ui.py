@@ -96,9 +96,8 @@ def get_project_data_path(project_name=None):
     # 确保项目目录存在
     if not os.path.exists(project_path):
         os.makedirs(project_path, exist_ok=True)
-        # 创建子目录
+        # 只创建数据目录，不创建log目录
         os.makedirs(os.path.join(project_path, "data"), exist_ok=True)
-        os.makedirs(os.path.join(project_path, "log"), exist_ok=True)
         print(f"创建新项目目录: {project_path}")
     
     return project_path
@@ -823,8 +822,13 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
                 # 将数据添加到对应设备的缓冲区
                 self.csi_buffer[device_id].append(csi_data)
                 
-                # 如果缓冲区达到指定大小，触发预测
-                if len(self.csi_buffer[device_id]) >= self.buffer_size:
+                # 如果缓冲区达到指定大小，且开启预测并且定时器在运行，才触发预测
+                if (
+                    getattr(self, 'enable_server_predict', False)
+                    and hasattr(self, 'predict_timer')
+                    and self.predict_timer.isActive()
+                    and len(self.csi_buffer[device_id]) >= self.buffer_size
+                ):
                     self.predict_action(device_id)
                     
             except Exception as e:
@@ -858,7 +862,7 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
                 'project_name': CURRENT_PROJECT_NAME  # 新增：发送项目名称
             }
             
-            # 发送预测请求
+            # 发送预测请求（采集版不显示检测UI，仅日志）
             self.textBrowser_log.append(f"<font color='cyan'>发送设备 {device_id} 的 {len(self.csi_buffer[device_id])} 条CSI数据进行预测...</font>")
             response = requests.post(
                 self.server_url,
@@ -873,16 +877,17 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
                     action = result['prediction']
                     confidence = result.get('confidence', 0)
                     
-                    # 更新UI显示
-                    self.predictionLabel.setText(f"设备 {device_id} 当前动作: {action}")
-                    
-                    # 根据置信度设置不同颜色
-                    if confidence > 0.8:
-                        self.predictionLabel.setStyleSheet("color: lime; text-align: center;")
-                    elif confidence > 0.5:
-                        self.predictionLabel.setStyleSheet("color: yellow; text-align: center;")
-                    else:
-                        self.predictionLabel.setStyleSheet("color: orange; text-align: center;")
+                    # 更新UI显示（检测UI已隐藏，判断控件存在再更新）
+                    if hasattr(self, 'predictionLabel') and self.predictionLabel:
+                        self.predictionLabel.setText(f"设备 {device_id} 当前动作: {action}")
+                        
+                        # 根据置信度设置不同颜色
+                        if confidence > 0.8:
+                            self.predictionLabel.setStyleSheet("color: lime; text-align: center;")
+                        elif confidence > 0.5:
+                            self.predictionLabel.setStyleSheet("color: yellow; text-align: center;")
+                        else:
+                            self.predictionLabel.setStyleSheet("color: orange; text-align: center;")
                         
                     self.textBrowser_log.append(
                         f"<font color='cyan'>设备 {device_id} 检测到动作: {action}, 置信度: {confidence:.2f}</font>")
@@ -1535,10 +1540,14 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         server_url_layout.addWidget(server_label)
         server_url_layout.addWidget(self.lineEdit_server_url)
         
-        # 启用预测复选框
+        # 启用预测复选框（采集用途：从UI移除并禁用）
         self.checkBox_server_predict = QCheckBox("启用实时预测")
         self.checkBox_server_predict.stateChanged.connect(self.toggle_server_predict)
-        server_url_layout.addWidget(self.checkBox_server_predict)
+        try:
+            self.checkBox_server_predict.hide()
+            self.checkBox_server_predict.setEnabled(False)
+        except Exception:
+            pass
         
         # 添加到服务器设置组
         server_layout.addLayout(server_url_layout)
@@ -1557,44 +1566,8 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
             self.main_layout.addWidget(server_group)
             
     def create_detection_panel(self):
-        """创建实时检测面板"""
-        self.detection_group = QGroupBox("实时动作检测")
-        self.detection_group.setFont(QFont("Arial", 10))
-        detection_layout = QVBoxLayout(self.detection_group)
-        
-        # 添加控制按钮和预测结果显示
-        control_layout = QHBoxLayout()
-        
-        # 开始/停止检测按钮
-        self.toggleDetectionButton = QPushButton("开始检测")
-        self.toggleDetectionButton.clicked.connect(self.toggle_detection)
-        self.toggleDetectionButton.setMinimumWidth(120)
-        control_layout.addWidget(self.toggleDetectionButton)
-        
-        # 添加预测结果显示
-        self.predictionLabel = QLabel("当前动作: -")
-        self.predictionLabel.setFont(QFont("Arial", 12, QFont.Bold))
-        self.predictionLabel.setStyleSheet("color: cyan; text-align: center;")
-        control_layout.addWidget(self.predictionLabel, 1)
-        
-        detection_layout.addLayout(control_layout)
-        
-        # 添加预测间隔设置
-        interval_layout = QHBoxLayout()
-        interval_label = QLabel("预测间隔(ms):")
-        self.predict_interval_spinbox = QSpinBox()
-        self.predict_interval_spinbox.setRange(100, 2000)
-        self.predict_interval_spinbox.setValue(self.predict_interval)
-        self.predict_interval_spinbox.setSingleStep(100)
-        self.predict_interval_spinbox.valueChanged.connect(self.update_predict_interval)
-        
-        interval_layout.addWidget(interval_label)
-        interval_layout.addWidget(self.predict_interval_spinbox)
-        interval_layout.addStretch(1)
-        
-        detection_layout.addLayout(interval_layout)
-        
-        # 添加任务采集控制面板
+        """创建采集任务面板（隐藏实时检测UI）"""
+        # 仅保留数据采集任务面板，不创建“实时动作检测”相关控件
         task_group = QGroupBox("数据采集任务")
         task_group.setFont(QFont("Arial", 10))
         task_layout = QVBoxLayout(task_group)
@@ -1619,17 +1592,32 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         user_id_layout.addWidget(user_id_label)
         user_id_layout.addWidget(self.user_id_input)
         
-        # 在任务ID输入上方添加动作类型选择
+        # 在任务ID输入上方添加动作类型选择 + 自定义动作输入
         action_type_layout = QHBoxLayout()
         action_type_label = QLabel("动作类型:")
         self.action_type_combo = QComboBox()
         self.action_type_combo.addItems([
             "walk", "sit", "stand", "lie_down", "bend", "fall_from_stand", "fall_from_squat", "fall_from_bed"
         ])
+        # 新增：自定义动作输入框（当列表没有时可直接输入）
+        self.custom_action_input = QLineEdit()
+        self.custom_action_input.setPlaceholderText("自定义动作（可选）")
         action_type_layout.addWidget(action_type_label)
         action_type_layout.addWidget(self.action_type_combo)
+        action_type_layout.addWidget(QLabel("或:"))
+        action_type_layout.addWidget(self.custom_action_input)
         task_layout.addLayout(action_type_layout)
         
+        # 新增：采集时长设置（秒）
+        duration_layout = QHBoxLayout()
+        duration_label = QLabel("采集时长(秒):")
+        self.duration_spin = QSpinBox()
+        self.duration_spin.setRange(1, 600)
+        self.duration_spin.setValue(5)
+        duration_layout.addWidget(duration_label)
+        duration_layout.addWidget(self.duration_spin)
+        task_layout.addLayout(duration_layout)
+
         # 添加到任务布局
         task_layout.addLayout(task_id_layout)
         task_layout.addLayout(user_id_layout)
@@ -1656,15 +1644,12 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         # 将任务面板添加到主布局
         self.main_layout.addWidget(task_group)
         
-        # 将检测面板添加到主布局
-        self.main_layout.addWidget(self.detection_group)
-        
     def update_user_id(self, text):
         """更新用户ID"""
         self.current_user_name = text
         
     def start_task(self):
-        """点击开始任务按钮的处理函数，延迟3秒后再开始采集"""
+        """点击开始任务按钮的处理函数，立即开始采集"""
         task_id = self.task_id_input.text().strip()
         if not task_id:
             QMessageBox.warning(self, "错误", "请输入任务ID")
@@ -1678,9 +1663,13 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         self.end_task_button.setText("结束采集")
         self.end_task_button.setStyleSheet("background-color: red; color: white;")
         # 日志反馈
-        self.textBrowser_log.append(f"<font color='orange'>【提示】3秒后开始采集任务: {task_id}，请准备动作</font>")
-        # 3秒后真正开始采集
-        QTimer.singleShot(3000, lambda: self._do_start_task(task_id))
+        self.textBrowser_log.append(f"<font color='lime'>【提示】已开始采集任务: {task_id}</font>")
+        # 立即开始采集
+        self._do_start_task(task_id)
+
+        # self.textBrowser_log.append(f"<font color='orange'>【提示】3秒后开始采集任务: {task_id}，请准备动作</font>")
+        # # 3秒后真正开始采集
+        # QTimer.singleShot(3000, lambda: self._do_start_task(task_id))
 
     def _do_start_task(self, task_id):
         # 按钮视觉反馈：采集中
@@ -1692,8 +1681,9 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         self.textBrowser_log.append(f"<font color='lime'>【提示】已开始采集任务: {task_id}</font>")
         # 开始任务
         self.start_task_collection(task_id)
-        # 自动3秒后结束采集
-        QTimer.singleShot(3000, self._auto_end_task)
+        # 自动在设定时长后结束采集
+        duration_ms = int(self.duration_spin.value()) * 1000
+        QTimer.singleShot(duration_ms, self._auto_end_task)
 
     def _auto_end_task(self):
         if self.end_task_button.isEnabled():
@@ -1717,6 +1707,37 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         
         # 结束任务
         self.end_task_collection()
+
+        # 自动递增下一次任务ID，便于连续采集
+        try:
+            current_id = self.task_id_input.text().strip() if hasattr(self, 'task_id_input') else ''
+            next_id = self._increment_task_id(current_id)
+            if next_id and hasattr(self, 'task_id_input'):
+                self.task_id_input.setText(next_id)
+                self.textBrowser_log.append(f"<font color='cyan'>下一个任务ID已自动设置为: {next_id}</font>")
+        except Exception as e:
+            self.textBrowser_log.append(f"<font color='yellow'>自动递增任务ID失败: {e}</font>")
+
+    def _increment_task_id(self, task_id):
+        """将类似 walk_01 的任务ID递增为 walk_02，保持前导零。
+        若无法解析数字后缀，则追加 _01；若无下划线但以数字结尾，则直接在末尾数字递增。
+        """
+        try:
+            import re
+            task_id = (task_id or '').strip()
+            if not task_id:
+                return ''
+            # 匹配前缀 +（可选下划线）+ 数字结尾
+            m = re.match(r"^(.*?)(_)??(\d+)$", task_id)
+            if m:
+                prefix, underscore, num_str = m.group(1), m.group(2) or '_', m.group(3)
+                width = len(num_str)
+                num = int(num_str) + 1
+                return f"{prefix}{underscore}{str(num).zfill(width)}"
+            # 若无数字结尾，则从 _01 开始
+            return task_id + "_01"
+        except Exception:
+            return task_id
 
     def toggle_detection(self):
         """切换检测开始/停止状态"""
@@ -1903,8 +1924,8 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         # 清空所有设备的任务缓冲区
         for device_id in self.device_task_buffers:
             self.device_task_buffers[device_id] = []
-        # 获取当前选中的动作类型
-        taget_action = self.action_type_combo.currentText()
+        # 获取当前动作类型：优先使用自定义动作，否则使用下拉选择
+        taget_action = self.custom_action_input.text().strip() or self.action_type_combo.currentText()
         # 向所有设备发送开始任务命令和动作类型
         for device_id, queue in self.serial_queues_write.items():
             if hasattr(queue, 'put'):
@@ -1932,36 +1953,48 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         
         # 如果是双设备模式，等待数据处理完成后再尝试合并数据
         if self.multi_device_mode and len(self.serial_queues_read.keys()) > 1:
-            self.textBrowser_log.append("<font color='cyan'>双设备模式：将在3秒后尝试合并数据...</font>")
+            ended_task_id = self.current_task_id  # 捕获当前任务ID，避免被后续任务覆盖
+            self.textBrowser_log.append(f"<font color='cyan'>双设备模式：将在3秒后尝试合并数据（任务: {ended_task_id}）...</font>")
             # 等待3秒，确保数据都已保存
-            QTimer.singleShot(3000, lambda: self.merge_device_data())
+            QTimer.singleShot(3000, lambda task_id=ended_task_id: self.merge_device_data(task_id))
         else:
             # 单设备模式，直接清空任务ID
             self.current_task_id = None
 
-    def merge_device_data(self):
-        if not self.current_task_id:
+    def merge_device_data(self, task_id=None):
+        # 优先使用传入的任务ID，避免因UI递增或新任务开始导致任务ID被覆盖
+        if task_id is None:
+            task_id = self.current_task_id
+        if not task_id:
             return
         device1_data = self.device_task_buffers.get('esp32_1', [])
         device2_data = self.device_task_buffers.get('esp32_2', [])
         if not device1_data or not device2_data:
             self.textBrowser_log.append("<font color='yellow'>至少有一个设备的数据为空，无法合并</font>")
             return
-        merged_file = merge_task_data(device1_data, device2_data, self.current_task_id, self.current_user_name)
+        merged_file = merge_task_data(device1_data, device2_data, task_id, self.current_user_name)
         if merged_file:
             self.textBrowser_log.append(f"<font color='green'>已合并设备数据并保存到: {merged_file}</font>")
-            try:
-                with open(merged_file, 'r', encoding='utf-8') as f:
-                    file_content = f.read()
-                merged_filename = os.path.basename(merged_file)
-                success = send_csv_file_to_server(merged_filename, file_content, self.server_url)
-                if success:
-                    self.textBrowser_log.append(f"<font color='green'>融合数据已上传服务器: {merged_file}</font>")
-                else:
-                    self.textBrowser_log.append(f"<font color='red'>融合数据上传服务器失败: {merged_file}</font>")
-            except Exception as e:
-                self.textBrowser_log.append(f"<font color='red'>融合数据上传异常: {e}</font>")
-        self.current_task_id = None
+            # 仅在启用服务器保存时上传
+            if getattr(self, 'enable_server_save', False):
+                try:
+                    with open(merged_file, 'r', encoding='utf-8') as f:
+                        file_content = f.read()
+                    merged_filename = os.path.basename(merged_file)
+                    # 携带当前项目名称
+                    project_name = getattr(self, 'current_project_name', CURRENT_PROJECT_NAME)
+                    success = send_csv_file_to_server(merged_filename, file_content, self.server_url, project_name)
+                    if success:
+                        self.textBrowser_log.append(f"<font color='green'>融合数据已上传服务器: {merged_file}</font>")
+                    else:
+                        self.textBrowser_log.append(f"<font color='red'>融合数据上传服务器失败: {merged_file}</font>")
+                except Exception as e:
+                    self.textBrowser_log.append(f"<font color='red'>融合数据上传异常: {e}</font>")
+            else:
+                self.textBrowser_log.append("<font color='yellow'>未启用服务器保存，融合数据未上传</font>")
+        # 仅当当前任务ID与已合并的任务相同才清空，避免覆盖新任务
+        if self.current_task_id == task_id:
+            self.current_task_id = None
         for device_id in self.device_task_buffers:
             self.device_task_buffers[device_id] = []
 
@@ -2255,14 +2288,18 @@ def save_and_send_task_data(task_data_buffer, task_id, user_name, server_url, en
                 writer.writerow(row.values())
         print(f"项目本地保存文件: {filename}, 数据量: {len(task_data_buffer)} 条")
         
-        # 直接上传csv文件内容
-        with open(filepath, 'r', encoding='utf-8') as f:
-            file_content = f.read()
-        success = send_csv_file_to_server(filename, file_content, server_url, project_name)
-        if success:
-            print(f"服务器数据发送成功: {filename}")
+        # 根据开关决定是否上传到服务器
+        if enable_server_save:
+            # 直接上传csv文件内容
+            with open(filepath, 'r', encoding='utf-8') as f:
+                file_content = f.read()
+            success = send_csv_file_to_server(filename, file_content, server_url, project_name)
+            if success:
+                print(f"服务器数据发送成功: {filename}")
+            else:
+                print(f"警告: 服务器数据发送失败: {filename}")
         else:
-            print(f"警告: 服务器数据发送失败: {filename}")
+            print("未启用服务器保存，已跳过上传。")
     except Exception as e:
         print(f"保存任务数据时发生错误: {type(e).__name__}: {str(e)}")
 
@@ -2447,46 +2484,31 @@ def serial_handle(queue_read, queue_write, port, device_id=None, project_name=No
         project_path = os.path.join(PROJECT_FOLDER, project_name)
     else:
         project_path = get_project_data_path()
-    folder_list = [os.path.join(project_path, 'log'), os.path.join(project_path, 'data')]
-    for folder in folder_list:
-        if not path.exists(folder):
-            try:
-                mkdir(folder)
-            except Exception as e:
-                print(f"创建项目文件夹失败: {folder}, 错误: {e}")
-                data_series = pd.Series(index=['type', 'data'],
-                                        data=['FAIL_EVENT', f"创建项目文件夹失败: {folder}, 错误: {e}"])
-                queue_read.put(data_series)
-                if ser:
-                    ser.close()
-                sys.exit()
-                return
+    # 只创建数据目录，不创建log目录
+    data_folder = os.path.join(project_path, 'data')
+    if not path.exists(data_folder):
+        try:
+            mkdir(data_folder)
+        except Exception as e:
+            print(f"创建项目数据文件夹失败: {data_folder}, 错误: {e}")
+            data_series = pd.Series(index=['type', 'data'],
+                                    data=['FAIL_EVENT', f"创建项目数据文件夹失败: {data_folder}, 错误: {e}"])
+            queue_read.put(data_series)
+            if ser:
+                ser.close()
+            sys.exit()
+            return
     # 为每个设备创建独立的文件
     device_suffix = f"_{device_id}" if device_id else ""
     if project_name:
         project_path = os.path.join(PROJECT_FOLDER, project_name)
     else:
         project_path = get_project_data_path()
-    data_valid_list = pd.DataFrame(
-        columns=pd.Index(['type', 'columns_names', 'file_name', 'file_fd', 'file_writer']),
-        data=[["CSI_DATA", CSI_DATA_COLUMNS_NAMES, os.path.join(project_path, f"log/csi_data{device_suffix}.csv"), None, None],
-              ["DEVICE_INFO", DEVICE_INFO_COLUMNS_NAMES, os.path.join(project_path, f"log/device_info{device_suffix}.csv"), None, None]]
-    )
-    log_data_writer = None
-    try:
-        for data_valid in data_valid_list.iloc:
-            data_valid['file_fd'] = open(data_valid['file_name'], 'w')
-            data_valid['file_writer'] = csv.writer(data_valid['file_fd'])
-            data_valid['file_writer'].writerow(data_valid['columns_names'])
-        log_data_writer = open(os.path.join(project_path, f"log/log_data{device_suffix}.txt"), 'w+')
-    except Exception as e:
-        print(f"打开文件失败: {e}")
-        data_series = pd.Series(index=['type', 'data'], data=['FAIL_EVENT', f"打开文件失败: {e}"])
-        queue_read.put(data_series)
-        if ser:
-            ser.close()
-        sys.exit()
-        return
+    
+    # 不再创建log文件，只保留控制台输出
+    print(f"设备 {device_id} 已准备就绪，项目路径: {project_path}")
+    print(f"CSI数据过滤已禁用，将保存所有数据包")
+    print(f"日志信息将输出到控制台，不保存到文件")
 
     # 使用混合方法：保留缓冲区但使用更简单的处理逻辑
     data_buffer = ""
@@ -2497,6 +2519,11 @@ def serial_handle(queue_read, queue_write, port, device_id=None, project_name=No
     taget_data_writer = None
     last_queue_full_warning_time = 0
     last_buffer_warning_time = 0
+    # 日志降噪相关
+    noisy_base64_count = 0
+    last_noisy_base64_log_time = 0
+    csi_error_count = 0
+    last_csi_error_log_time = 0
     current_user_name = "user01"  # 默认用户名，可通过命令更新
     enable_server_save = False
     server_url = "http://8.136.10.160:12786/api/csi_data"
@@ -2532,11 +2559,6 @@ def serial_handle(queue_read, queue_write, port, device_id=None, project_name=No
             if not queue_write.empty():
                 command = queue_write.get()
                 if command == "exit":
-                    for data_valid in data_valid_list.iloc:
-                        if data_valid['file_fd']:
-                            data_valid['file_fd'].close()
-                    if log_data_writer:
-                        log_data_writer.close()
                     if csi_target_data_file_fd:
                         csi_target_data_file_fd.close()
                     if ser:
@@ -2602,11 +2624,6 @@ def serial_handle(queue_read, queue_write, port, device_id=None, project_name=No
             print(f"串口操作异常: {e}")
             data_series = pd.Series(index=['type', 'data'], data=['FAIL_EVENT', f"串口操作异常: {e}"])
             queue_read.put(data_series)
-            for data_valid in data_valid_list.iloc:
-                if data_valid['file_fd']:
-                    data_valid['file_fd'].close()
-            if log_data_writer:
-                log_data_writer.close()
             if csi_target_data_file_fd:
                 csi_target_data_file_fd.close()
             if ser:
@@ -2629,40 +2646,44 @@ def serial_handle(queue_read, queue_write, port, device_id=None, project_name=No
             # 添加到缓冲区
             data_buffer += strings
 
-            # 处理数据包
-            for data_valid in data_valid_list.iloc:
-                index = data_buffer.find(data_valid['type'])
-                if index >= 0:
-                    # 找到下一个数据包开始位置
-                    packet_start = index
-                    next_packet = data_buffer.find(data_valid['type'], packet_start + 1)
-
-                    # 如果没有找到下一个数据包，继续等待更多数据
-                    if next_packet == -1:
-                        continue
-
-                    # 提取当前数据包
-                    packet = data_buffer[packet_start:next_packet]
-                    # 更新缓冲区，移除已处理的数据
-                    data_buffer = data_buffer[next_packet:]
-
+            # 处理数据包 - 简化版本，不再使用data_valid_list
+            # 直接处理CSI_DATA和DEVICE_INFO类型的数据
+            csi_index = data_buffer.find("CSI_DATA")
+            device_info_index = data_buffer.find("DEVICE_INFO")
+            
+            # 处理CSI_DATA
+            if csi_index >= 0:
+                next_csi = data_buffer.find("CSI_DATA", csi_index + 1)
+                if next_csi != -1:
+                    packet = data_buffer[csi_index:next_csi]
+                    data_buffer = data_buffer[next_csi:]
+                    
                     # 解析CSV数据
                     try:
                         csv_reader = csv.reader(StringIO(packet))
                         data = next(csv_reader)
+                        
+                        # 跳过表头行
+                        if len(data) > 0 and str(data[0]).strip().upper() == 'TYPE':
+                            continue
 
-                        # 检查数据是否完整
-                        if len(data) == len(data_valid['columns_names']):
-                            data_series = pd.Series(data, index=data_valid['columns_names'])
+                        # 统一列长度为CSI_DATA_COLUMNS_NAMES长度
+                        expected_cols = CSI_DATA_COLUMNS_NAMES
+                        if len(data) < len(expected_cols):
+                            data = data + [''] * (len(expected_cols) - len(data))
+                        elif len(data) > len(expected_cols):
+                            data = data[:len(expected_cols)]
 
-                            # 处理时间戳
-                            try:
-                                datetime.strptime(str(data_series['timestamp']), '%Y-%m-%d %H:%M:%S.%f')
-                            except Exception as e:
-                                data_series['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                        data_series = pd.Series(data, index=expected_cols)
 
-                            # 处理CSI数据
-                            if data_series['type'] == 'CSI_DATA':
+                        # 处理时间戳
+                        try:
+                            datetime.strptime(str(data_series['timestamp']), '%Y-%m-%d %H:%M:%S.%f')
+                        except Exception as e:
+                            data_series['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+
+                        # 处理CSI数据
+                        if str(data_series.get('type', '')).strip().upper() == 'CSI_DATA':
                                 with packet_lock:
                                     try:
                                         # 检查并清理数据字段
@@ -2698,7 +2719,7 @@ def serial_handle(queue_read, queue_write, port, device_id=None, project_name=No
                                                 csi_raw_data = []
 
                                         # 检查数据长度
-                                        if len(csi_raw_data) != int(data_series['len']):
+                                        if str(data_series.get('len','')).isdigit() and len(csi_raw_data) != int(data_series['len']):
                                             if len(csi_raw_data) < int(data_series['len']):
                                                 csi_raw_data.extend([0] * (int(data_series['len']) - len(csi_raw_data)))
                                             elif len(csi_raw_data) > int(data_series['len']):
@@ -2747,62 +2768,82 @@ def serial_handle(queue_read, queue_write, port, device_id=None, project_name=No
 
                                         # 使用解析的任务ID
                                         action, sequence_str = parse_task_id(current_task_id)
-
-                                        # 生成文件名，包含设备ID以避免覆盖
-                                        sequence = f"{current_sequence:02d}"
-                                        device_suffix = f"_{device_id}" if device_id else ""
-                                        current_file_key = f"{action}_{current_user_name}_{sequence}{device_suffix}"
-
-                                        # 创建文件（如果需要）
-                                        if current_file_key not in created_files:
-                                            try:
-                                                if project_name:
-                                                    project_path = os.path.join(PROJECT_FOLDER, project_name)
-                                                else:
-                                                    project_path = get_project_data_path()
-                                                folder = os.path.join(project_path, "data", action)
-                                                if not path.exists(folder):
-                                                    mkdir(folder)
-                                                csi_target_data_file_name = f"{folder}/{current_file_key}.csv"
-                                                csi_target_data_file_fd = open(csi_target_data_file_name, 'w+')
-                                                taget_data_writer = csv.writer(csi_target_data_file_fd)
-                                                taget_data_writer.writerow(data_series.index)
-                                                created_files[current_file_key] = csi_target_data_file_fd
-                                                print(f"创建新文件: {csi_target_data_file_name}")
-                                            except Exception as e:
-                                                print(f"创建文件失败: {e}")
-
-                                        # 写入数据
-                                        try:
-                                            if current_file_key in created_files and created_files[current_file_key]:
-                                                taget_data_writer = csv.writer(created_files[current_file_key])
-                                                taget_data_writer.writerow(data_series.astype(str))
-                                                created_files[current_file_key].flush()
-                                        except Exception as e:
-                                            print(f"写入文件失败: {e}, 文件: {current_file_key}")
-
-                                    # 更新上一次目标信息
-                                    taget_last = data_series['taget']
-                                    taget_seq_last = data_series['taget_seq']
-                            else:
-                                # 非CSI数据直接发送到队列
-                                if device_id:
-                                    data_series['device_id'] = device_id
-                                queue_read.put(data_series)
-
-                            # 写入文件
-                            data_valid['file_writer'].writerow(data_series.astype(str))
-                            data_valid['file_fd'].flush()
-                            break
+                                        
                     except Exception as e:
-                        print(f"CSV解析异常: {e}")
+                        # 降噪：对连续大量相同异常进行节流，每秒输出一次汇总
+                        csi_error_count += 1
+                        now_ts = time.time()
+                        if now_ts - last_csi_error_log_time >= 1.0:
+                            print(f"处理CSI_DATA异常: 最近1秒内共 {csi_error_count} 次，最后错误: {e}")
+                            csi_error_count = 0
+                            last_csi_error_log_time = now_ts
+                        continue
+            
+            # 处理DEVICE_INFO
+            if device_info_index >= 0:
+                next_device_info = data_buffer.find("DEVICE_INFO", device_info_index + 1)
+                if next_device_info != -1:
+                    packet = data_buffer[device_info_index:next_device_info]
+                    data_buffer = data_buffer[next_device_info:]
+                    
+                    # 解析CSV数据
+                    try:
+                        csv_reader = csv.reader(StringIO(packet))
+                        data = next(csv_reader)
+                        
+                        # 检查数据是否完整
+                        # 跳过表头
+                        if len(data) > 0 and str(data[0]).strip().upper() == 'TYPE':
+                            continue
+
+                        expected_cols = DEVICE_INFO_COLUMNS_NAMES
+                        if len(data) < len(expected_cols):
+                            data = data + [''] * (len(expected_cols) - len(data))
+                        elif len(data) > len(expected_cols):
+                            data = data[:len(expected_cols)]
+
+                        data_series = pd.Series(data, index=expected_cols)
+                        
+                        # 处理时间戳
+                        try:
+                            datetime.strptime(str(data_series['timestamp']), '%Y-%m-%d %H:%M:%S.%f')
+                        except Exception as e:
+                            data_series['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                        
+                        # 如果设置了设备ID，添加到数据中
+                        if device_id:
+                            data_series['device_id'] = device_id
+                        
+                        # 发送到队列
+                        if not queue_read.full():
+                            queue_read.put(data_series)
+                                
+                    except Exception as e:
+                        print(f"处理DEVICE_INFO异常: {e}")
                         continue
             else:
                 # 处理日志数据
                 if data_buffer.find("CSI_DATA") == -1 and data_buffer.find("DEVICE_INFO") == -1:
                     strings = re.sub(r'\\x1b.*?m', '', strings)
-                    log_data_writer.writelines(strings + "\n")
-                    log_data_writer.flush()  # 立即刷新日志
+                    s_nospace = re.sub(r'\s+', '', strings)
+                    # 识别包含大量逗号/长Base64片段/过长行的噪声日志
+                    num_commas = strings.count(',')
+                    segments = re.split(r'[\s,]+', strings)
+                    has_long_b64_segment = any(len(seg) >= 40 and re.match(r'^[A-Za-z0-9+/=]+$', seg or '') for seg in segments)
+                    is_very_long_line = len(s_nospace) >= 120
+                    # 保留白名单关键词（重要信息不过滤）
+                    keep_keywords = ('wifi', 'ip', 'connected', 'disconnected', 'radar', 'get_config', 'csi_en', 'csi_output_type')
+                    is_keep = any(k in strings.lower() for k in keep_keywords)
+
+                    if not is_keep and (has_long_b64_segment or num_commas >= 10 or is_very_long_line):
+                        noisy_base64_count += 1
+                        now_ts = time.time()
+                        if now_ts - last_noisy_base64_log_time >= 2.0:
+                            print(f"[{device_id}] 日志: 忽略冗长数据类日志 {noisy_base64_count} 条")
+                            noisy_base64_count = 0
+                            last_noisy_base64_log_time = now_ts
+                    else:
+                        print(f"[{device_id}] 日志: {strings}")
 
                     log = re.match(r'.*([DIWE]) \((\d+)\) (.*)', strings, re.I)
                     if log:
